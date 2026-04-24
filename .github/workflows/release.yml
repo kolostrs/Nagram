@@ -207,6 +207,12 @@ jobs:
         run: |
           sed -i "s/2000000000000/$(date +%s%3N)/g" gradle.properties
           echo "sdk.dir=${ANDROID_HOME}" >> local.properties
+      - name: Setup Keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > TMessagesProj/config/release.keystore
+          echo "KEYSTORE_PASS=${{ secrets.KEYSTORE_PASS }}" >> local.properties
+          echo "ALIAS_NAME=${{ secrets.ALIAS_NAME }}" >> local.properties
+          echo "ALIAS_PASS=${{ secrets.ALIAS_PASS }}" >> local.properties
       - name: Gradle cache
         uses: actions/cache@v4
         with:
@@ -214,9 +220,7 @@ jobs:
           key: gradle-${{ hashFiles('**/*.gradle') }}
       - name: Release Build
         run: |
-          export LOCAL_PROPERTIES="${{ secrets.LOCAL_PROPERTIES }}"
           ./gradlew TMessagesProj:assembleRelease
-
           APK=$(find TMessagesProj/build/outputs/apk -name '*arm64-v8a*.apk')
           APK=$(dirname $APK)
           echo "APK=$APK" >> $GITHUB_ENV
@@ -229,40 +233,3 @@ jobs:
         with:
           name: Release
           path: ${{ env.APK }}
-  upload:
-    name: Upload release
-    if: github.event.inputs.upload != 'y'
-    runs-on: ubuntu-latest
-    needs:
-      - build
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Remove gradle.properties
-        run: |
-          rm -f gradle.properties
-      - name: Download gradle.properties
-        uses: actions/download-artifact@v4
-        with:
-          name: gradle-properties
-          path: .
-      - name: Donwload Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.12
-      - name: Send to Telegram
-        run: |
-          # send release via telegram bot api
-          export mini64=$(find artifacts -name "*arm64-v8a.apk")
-          export mini32=$(find artifacts -name "*armeabi-v7a.apk")
-
-          echo $mini64
-          echo $mini32
-
-          python -m pip install -r bin/scripts/requirements.txt
-          git log -1 --pretty=format:"%s%n%n%b" > artifacts/caption.txt
-          python bin/scripts/upload.py ${{ secrets.HELPER_BOT_TOKEN }} ${{ secrets.HELPER_BOT_TARGET }} release
